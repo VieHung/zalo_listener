@@ -1,0 +1,33 @@
+cdp:
+  endpoint: "http://127.0.0.1:9222"
+  target_url_contains: "chat.zalo.me"
+  reload_on_attach: true
+
+storage:
+  sqlite_path: "/home/taviethung/Storage_2/Work/Company/MB/zalo_listener/data/zalo.sqlite3"
+
+capture:
+  url_filter: "zalo"
+  http: true
+  websocket: true
+  dom: false
+  dom_selector: '[class*="message"]'
+  store_raw_events: false
+
+crypto:
+  # Để rỗng để listener thử tìm key từ phiên Zalo đang đăng nhập.
+  secret_key_b64: ""
+
+filter:
+  group_only: false
+  only_thread_ids: []
+  skip_thread_ids: []
+
+privacy:
+  pseudonymize_uid: true
+  store_display_name: false
+  scrub_pii: true
+  salt: "THAY_BANG_CHUOI_NGAU_NHIEN_DAI"
+
+runtime:
+  stats_every_seconds: 15
