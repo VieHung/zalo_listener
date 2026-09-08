@@ -14,6 +14,8 @@ data/
 discover/
 
 # ── Bí mật / cấu hình cục bộ ─────────────────────────────────────────────
+# Config thật (chứa salt, spreadsheet_id, thread nội bộ) — dùng config.example.yaml làm mẫu
+config.yaml
 # Service account Google (credentials)
 service_account.json
 *service_account*.json

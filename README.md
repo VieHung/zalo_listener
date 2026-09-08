@@ -66,7 +66,14 @@ thay vì khởi chạy browser do Playwright quản lý.
 
 ## Cấu hình
 
-Tạo file `config.yaml` trong thư mục project:
+Copy file mẫu rồi chỉnh (`config.yaml` đã được `.gitignore` vì chứa `salt`,
+`spreadsheet_id`, thread nội bộ — không commit):
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+Nội dung `config.yaml`:
 
 ```yaml
 cdp:

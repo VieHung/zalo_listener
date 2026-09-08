@@ -27,6 +27,7 @@ privacy:
   pseudonymize_uid: true
   store_display_name: false
   scrub_pii: true
+  # Sinh chuỗi ngẫu nhiên: .venv/bin/python -c "import secrets; print(secrets.token_hex(32))"
   salt: "THAY_BANG_CHUOI_NGAU_NHIEN_DAI"
 
 runtime:
@@ -38,29 +39,28 @@ sheets:
   # Service account: tạo trên Google Cloud, tải JSON key, rồi SHARE spreadsheet
   # với email client_email trong file JSON (quyền Editor).
   credentials_json: "/home/taviethung/Storage_2/Work/Company/MB/zalo_listener/data/service_account.json"
-  # Chỉ cần MỘT trong hai:
-  spreadsheet_id: ""      # vd "1AbC...xyz" (lấy từ URL sheet)
+  # Chỉ cần MỘT trong hai (lấy từ URL sheet):
+  spreadsheet_id: ""      # vd "1AbC...xyz"
   spreadsheet_url: ""
   poll_seconds: 5
   batch_limit: 500
   backfill: false         # true = đẩy cả lịch sử cũ; false = chỉ tin mới từ lúc chạy
   # CÁC THREAD cần đẩy lên sheet (bắt buộc). Lấy thread_id từ bảng threads.
   track_thread_ids:
-    - "8867095468852493151"
+    - "0000000000000000000"
   # (Tuỳ chọn) Ép tên sheet cho thread — override tên tự bắt từ listener.
   thread_names: {}
-  #   "8867095468852493151": "Nhóm CSKH"
+  #   "0000000000000000000": "Nhóm CSKH"
   # Cột hiển thị (thứ tự tuỳ ý): ts_local, direction, sender, category, text,
   # msg_id, thread_id, thread_type, msg_type, ts_ms
-  columns: [ts_local, direction, sender, category, text, msg_id]
+  columns: [ts_local, sender, category, text, msg_id]
 
 # ── Phân loại tin nhắn theo keyword (đa nhãn, bỏ dấu khi so khớp) ────────────
 classify:
   accent_insensitive: true
-  default_label: ""       # nhãn khi không khớp gì (để rỗng = bỏ trống ô)
+  default_label: "Khác"       # nhãn khi không khớp gì (để rỗng = bỏ trống ô)
   categories:
-    "Cần xử lý":  ["gấp", "khẩn", "lỗi", "không vào được", "sự cố"]
-    "Giao dịch":  ["chuyển khoản", "thanh toán", "hoá đơn", "hóa đơn", "ck"]
+    "Cần xử lý":  ["gấp", "khẩn", "lỗi", "sự cố"]
+    "Giao dịch":  ["chuyển khoản", "thanh toán", "hoá đơn", "ck"]
     "Khiếu nại":  ["phàn nàn", "khiếu nại", "kém", "tệ", "chậm"]
-    "Hỏi đáp":    ["cho hỏi", "hỏi", "tư vấn", "thế nào", "làm sao"]
-  
+    "Hỏi đáp":    ["cho hỏi", "hỏi", "tư vấn", "làm sao"]
