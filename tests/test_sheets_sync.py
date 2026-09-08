@@ -5,6 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import gspread
+
 from zalo_listener import sheets_sync as ss
 from zalo_listener.classify import Classifier
 from zalo_listener.extract import Message, extract_name_hints
@@ -110,6 +112,96 @@ class SheetHelperTests(unittest.TestCase):
             obj._row_values(r),
             ["09:02 08/09/2026", "đến", "u_abc", "Giao dịch", "CK gap", "m1"],
         )
+
+
+class _FakeWS:
+    def __init__(self, title, sh):
+        self.title = title
+        self.rows = []
+        self._sh = sh
+        self.deleted = False
+
+    def append_row(self, v, **k):
+        self.rows.append(v)
+
+    def append_rows(self, v, **k):
+        if self.deleted or self.title not in self._sh._ws:
+            raise gspread.exceptions.APIError.__new__(gspread.exceptions.APIError)
+        self.rows.extend(v)
+
+    def update_title(self, t):
+        if self.deleted:
+            raise Exception(f"Unable to parse range: '{self.title}'")
+        del self._sh._ws[self.title]
+        self.title = t
+        self._sh._ws[t] = self
+
+
+class _FakeSH:
+    title = "TEST"
+
+    def __init__(self):
+        self._ws = {}
+
+    def worksheets(self):
+        return list(self._ws.values())
+
+    def add_worksheet(self, title, rows, cols):
+        w = _FakeWS(title, self)
+        self._ws[title] = w
+        return w
+
+
+class RecreateDeletedSheetTests(unittest.TestCase):
+    def setUp(self):
+        # APIError.__str__ trả về chữ ký lỗi "đã xoá" để _looks_deleted nhận diện
+        self._orig_str = gspread.exceptions.APIError.__str__
+        gspread.exceptions.APIError.__str__ = lambda s: "Unable to parse range: 'X'"
+
+    def tearDown(self):
+        gspread.exceptions.APIError.__str__ = self._orig_str
+
+    def _make_sync(self, dbp):
+        obj = object.__new__(ss.SheetSync)
+        obj.sqlite_path = dbp
+        obj.tracked = ["111"]
+        obj.limit = 500
+        obj.columns = ["ts_local", "text", "msg_id"]
+        obj.header = ["Thời gian", "Nội dung", "Mã tin"]
+        obj.overrides = {}
+        obj.classifier = Classifier({})
+        obj.state = {"last_rowid": 0, "titles": {}}
+        obj.state_path = Path(tempfile.mkdtemp()) / "st.json"
+        obj._db = obj._open_db_ro()
+        obj._ws_cache = {}
+        obj.sh = _FakeSH()
+        return obj
+
+    def test_recreates_sheet_after_manual_delete(self):
+        d = tempfile.mkdtemp()
+        dbp = str(Path(d) / "z.sqlite3")
+        s = Store(dbp, PrivacyFilter({"pseudonymize_uid": False}), store_raw=False)
+        s.upsert_message(Message("a0", "111", "group", "u1", "A", 1, "1", "hi", None, "incoming", {}))
+        s.note_group_name("111", "Nhom Mot")
+        s.close()
+
+        sync = self._make_sync(dbp)
+        self.assertEqual(sync.sync_once(), 1)
+        self.assertIn("Nhom Mot", sync.sh._ws)
+
+        # mô phỏng người dùng xoá sheet trên Google
+        sync._ws_cache["111"].deleted = True
+        del sync.sh._ws["Nhom Mot"]
+
+        s2 = Store(dbp, PrivacyFilter({"pseudonymize_uid": False}), store_raw=False)
+        s2.upsert_message(Message("a1", "111", "group", "u1", "A", 2, "1", "moi", None, "incoming", {}))
+        s2.note_group_name("111", "Nhom Mot")
+        s2.close()
+
+        # sync tiếp: phải tự tạo lại sheet và đẩy được dòng mới
+        self.assertEqual(sync.sync_once(), 1)
+        self.assertIn("Nhom Mot", sync.sh._ws)
+        self.assertIn(["Thời gian", "Nội dung", "Mã tin"], sync.sh._ws["Nhom Mot"].rows)
 
 
 if __name__ == "__main__":

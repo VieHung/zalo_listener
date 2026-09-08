@@ -247,14 +247,42 @@ class SheetSync:
                     out.append("")
         return out
 
-    def _append_with_retry(self, ws, rows: list, tries: int = 3) -> bool:
-        for attempt in range(tries):
+    @staticmethod
+    def _looks_deleted(err: Exception) -> bool:
+        """Nhận diện lỗi do sheet đã bị xoá (handle cache treo)."""
+        if isinstance(err, gspread.exceptions.WorksheetNotFound):
+            return True
+        msg = str(err).lower()
+        return any(s in msg for s in (
+            "unable to parse range",   # range 'Tên sheet'!A1 không còn
+            "no grid with id",
+            "does not exist",
+            "not found",
+        ))
+
+    def _invalidate(self, thread_id: str):
+        """Quên handle + tên sheet của thread -> lần tới sẽ dò lại / tạo mới."""
+        self._ws_cache.pop(thread_id, None)
+        self._titles.pop(thread_id, None)
+        self._save_state()
+
+    def _push_group(self, thread_id: str, grp: list, names: dict) -> bool:
+        """Đẩy một nhóm dòng vào sheet của thread. Tự tạo lại nếu sheet bị xoá."""
+        values = [self._row_values(r) for r in grp]
+        recreated = False
+        for attempt in range(3):
             try:
-                ws.append_rows(rows, value_input_option="USER_ENTERED")
+                ws = self._worksheet_for(thread_id, names)
+                ws.append_rows(values, value_input_option="USER_ENTERED")
                 return True
             except Exception as e:
+                if self._looks_deleted(e) and not recreated:
+                    print(f"[sheets] sheet của thread {thread_id} không còn — tạo lại.")
+                    self._invalidate(thread_id)
+                    recreated = True
+                    continue                       # tạo lại ngay, không chờ
                 wait = 2 * (attempt + 1)
-                print(f"[sheets] lỗi append ({ws.title}), thử lại sau {wait}s: {e}")
+                print(f"[sheets] lỗi đẩy thread {thread_id}, thử lại sau {wait}s: {e}")
                 time.sleep(wait)
         return False
 
@@ -273,15 +301,8 @@ class SheetSync:
         min_failed_rowid: Optional[int] = None
         pushed = 0
         for thread_id, grp in groups.items():
-            try:
-                ws = self._worksheet_for(thread_id, names)
-            except Exception as e:
-                print(f"[sheets] không mở/tạo được sheet cho {thread_id}: {e}")
-                min_failed_rowid = min(min_failed_rowid or grp[0]["rowid"], grp[0]["rowid"])
-                continue
-            values = [self._row_values(r) for r in grp]
-            if self._append_with_retry(ws, values):
-                pushed += len(values)
+            if self._push_group(thread_id, grp, names):
+                pushed += len(grp)
             else:
                 min_failed_rowid = min(min_failed_rowid or grp[0]["rowid"], grp[0]["rowid"])
 
