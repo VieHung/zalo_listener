@@ -28,7 +28,7 @@ import yaml
 from playwright.async_api import async_playwright
 
 from . import crypto
-from .extract import extract_messages
+from .extract import extract_messages, extract_name_hints
 from .privacy import PrivacyFilter
 from .store import Store
 
@@ -89,7 +89,7 @@ class Listener:
         self.counters = {"events": 0, "http": 0, "ws": 0, "dom": 0,
                          "ws_send": 0, "http_parsed": 0, "ws_decoded": 0,
                          "decode_failed": 0,
-                         "new_msgs": 0, "dup_msgs": 0}
+                         "new_msgs": 0, "dup_msgs": 0, "names": 0}
         self._running = True
         self._disc_fp = None
         if discover:
@@ -218,6 +218,15 @@ class Listener:
                 self.counters["new_msgs"] += 1
             else:
                 self.counters["dup_msgs"] += 1
+        # Bắt tên nhóm / tên người 1-1 để đặt tên sheet ở module đồng bộ.
+        for h in extract_name_hints(data):
+            changed = (
+                self.store.note_group_name(h.raw_id, h.name)
+                if h.kind == "group"
+                else self.store.note_user_name(h.raw_id, h.name)
+            )
+            if changed:
+                self.counters["names"] += 1
 
     def _passes_filter(self, m) -> bool:
         f = self.filter
@@ -299,6 +308,7 @@ class Listener:
                 print(
                     f"[stats] db: {s['messages']} msg / {s['threads']} thread "
                     f"| phiên: +{c['new_msgs']} mới, {c['dup_msgs']} trùng, "
+                    f"{c['names']} tên nhóm/người, "
                     f"{c['ws_decoded']} WS giải mã, {c['decode_failed']} lỗi giải mã, "
                     f"{c['http_parsed']} HTTP JSON, "
                     f"{c['events']} sự kiện "

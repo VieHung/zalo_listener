@@ -22,6 +22,14 @@ TYPE_KEYS = ("msgType", "type", "cmd", "contentType")
 QUOTE_KEYS = ("quote", "quoteMsg", "reply", "refMsg")
 SELF_KEYS = ("userId", "selfUid", "self_uid", "ownerId")
 
+# Khoá định danh nhóm và tên nhóm (dùng để đặt tên sheet).
+GROUP_ID_KEYS = ("groupId", "grid", "group_id", "gid")
+GROUP_NAME_KEYS = ("groupName", "gname", "name", "topic", "subject", "title")
+# Khoá định danh người dùng và tên hiển thị (đặt tên thread 1-1).
+UID_KEYS = ("uid", "userId", "uidFrom", "uid_from", "fromUid", "senderId")
+DNAME_KEYS = ("dName", "displayName", "zaloName", "fullName", "fromDisplayName",
+              "senderName", "name")
+
 
 @dataclass
 class Message:
@@ -170,3 +178,61 @@ def _build(d: dict, ctx_thread: Optional[str], ctx_type: str) -> Message:
         direction=direction,
         raw=d,
     )
+
+
+# ── trích tên nhóm / tên người để đặt tên sheet ────────────────────────────
+@dataclass
+class NameHint:
+    kind: str        # "group" | "user"
+    raw_id: str      # id THÔ (chưa giả danh) — khớp với threads.thread_id
+    name: str
+
+
+def _clean_name(val: Any) -> Optional[str]:
+    if not isinstance(val, str):
+        return None
+    s = " ".join(val.split()).strip()
+    if not s or s.isdigit():        # tên rỗng hoặc toàn số -> nhiều khả năng là id
+        return None
+    return s[:120]
+
+
+def extract_name_hints(obj: Any) -> list["NameHint"]:
+    """Đệ quy tìm cặp (id, tên) cho nhóm và người dùng trong payload đã giải mã."""
+    out: list[NameHint] = []
+    seen: set = set()
+
+    def add(kind: str, rid: Any, name: Optional[str]) -> None:
+        if rid is None or not name:
+            return
+        rid = str(rid)
+        if name == rid:
+            return
+        key = (kind, rid, name)
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(NameHint(kind, rid, name))
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            gid = _first(node, GROUP_ID_KEYS)
+            if gid is not None:
+                gname = _first(node, ("groupName", "gname", "topic", "subject", "title"))
+                if gname is None and not _looks_like_message(node):
+                    gname = node.get("name")
+                add("group", gid, _clean_name(gname))
+
+            uid = _first(node, UID_KEYS)
+            dname = _first(node, DNAME_KEYS[:-1])  # bỏ "name" chung khỏi tên người
+            add("user", uid, _clean_name(dname))
+
+            for v in node.values():
+                if isinstance(v, (dict, list)):
+                    walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(obj)
+    return out

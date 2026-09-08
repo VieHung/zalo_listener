@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+import unicodedata
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +36,11 @@ CREATE TABLE IF NOT EXISTS messages (
     thread_type   TEXT,
     uid_from      TEXT,
     ts_ms         INTEGER,
+    ts_local      TEXT GENERATED ALWAYS AS (
+        CASE WHEN ts_ms IS NULL THEN NULL
+             ELSE strftime('%H:%M %d/%m/%Y', ts_ms / 1000, 'unixepoch', '+7 hours')
+        END
+    ) VIRTUAL,
     msg_type      TEXT,
     text          TEXT,
     quote_msg_id  TEXT,
@@ -70,11 +76,26 @@ class Store:
 
     def _migrate(self):
         """Thêm cột mới mà không làm mất database đã có."""
+        # table_xinfo (không phải table_info) mới liệt kê cả cột generated,
+        # nếu không migration sẽ tưởng ts_local chưa có và ALTER lại mỗi lần chạy.
         columns = {
-            row[1] for row in self.db.execute("PRAGMA table_info(messages)")
+            row[1] for row in self.db.execute("PRAGMA table_xinfo(messages)")
         }
         if "direction" not in columns:
             self.db.execute("ALTER TABLE messages ADD COLUMN direction TEXT")
+        if "ts_local" not in columns:
+            # Cột giờ địa phương dạng đọc được (vd "09:02 08/09/2026"), múi giờ
+            # VN (UTC+7, không DST). Tự suy từ ts_ms nên luôn đồng bộ; VIRTUAL
+            # để ALTER được trên DB cũ và vì strftime không được phép trong cột
+            # STORED (non-deterministic).
+            self.db.execute(
+                "ALTER TABLE messages ADD COLUMN ts_local TEXT "
+                "GENERATED ALWAYS AS ("
+                "  CASE WHEN ts_ms IS NULL THEN NULL"
+                "       ELSE strftime('%H:%M %d/%m/%Y', ts_ms / 1000, 'unixepoch', '+7 hours')"
+                "  END"
+                ") VIRTUAL"
+            )
 
     # ── message ────────────────────────────────────────────────────────────
     def upsert_message(self, m: Message) -> bool:
@@ -147,6 +168,46 @@ class Store:
                ON CONFLICT(thread_id) DO UPDATE SET name = excluded.name""",
             (thread_id, name, int(time.time()*1000), int(time.time()*1000)),
         )
+
+    def note_group_name(self, group_id: str, name: str) -> bool:
+        """Ghi tên nhóm vào threads.name (tạo row nếu chưa có). True nếu đổi."""
+        name = unicodedata.normalize("NFC", name).strip()
+        if not name:
+            return False
+        now = int(time.time() * 1000)
+        cur = self.db.execute(
+            "SELECT name FROM threads WHERE thread_id = ?", (group_id,)
+        ).fetchone()
+        if cur and cur[0] == name:
+            return False
+        self.db.execute(
+            """INSERT INTO threads (thread_id, thread_type, name, first_seen_ms, last_seen_ms)
+               VALUES (?, 'group', ?, ?, ?)
+               ON CONFLICT(thread_id) DO UPDATE SET
+                   name        = excluded.name,
+                   thread_type = 'group'""",
+            (group_id, name, now, now),
+        )
+        return True
+
+    def note_user_name(self, uid_raw: str, name: str) -> bool:
+        """Với thread 1-1, thread_id chính là uid của đối phương -> đặt tên thread.
+
+        Chỉ áp cho thread loại 'user'/'unknown' đã tồn tại (không tạo mới, tránh
+        đẻ thread rác từ mọi thành viên nhóm). True nếu có cập nhật.
+        """
+        name = unicodedata.normalize("NFC", name).strip()
+        if not name:
+            return False
+        cur = self.db.execute(
+            "SELECT thread_type, name FROM threads WHERE thread_id = ?", (uid_raw,)
+        ).fetchone()
+        if cur is None or cur[0] == "group" or cur[1] == name:
+            return False
+        self.db.execute(
+            "UPDATE threads SET name = ? WHERE thread_id = ?", (name, uid_raw)
+        )
+        return True
 
     # ── raw ──────────────────────────────────────────────────────────────────
     def add_raw(self, kind: str, url: str, payload: str):

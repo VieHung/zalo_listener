@@ -1,0 +1,29 @@
+# ── Môi trường Python ────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ── Dữ liệu & runtime nhạy cảm (KHÔNG commit) ────────────────────────────
+# Database chứa tin nhắn thật, lock file
+data/
+# Profile Brave: cookies, session đăng nhập Zalo, cache
+.runtime/
+# Dump sự kiện thô khi chạy --discover (có thể chứa secret key)
+discover/
+
+# ── Bí mật / cấu hình cục bộ ─────────────────────────────────────────────
+# Service account Google (credentials)
+service_account.json
+*service_account*.json
+credentials*.json
+# State của module đồng bộ sheets
+*.state.json
+sheets_sync.state.json
+
+# ── Hệ điều hành / editor ────────────────────────────────────────────────
+.DS_Store
+*.swp
+.idea/
+.vscode/

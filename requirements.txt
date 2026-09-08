@@ -1,0 +1,5 @@
+google-auth==2.57.1
+gspread==6.2.1
+playwright==1.62.0
+pycryptodome==3.23.0
+PyYAML==6.0.3
